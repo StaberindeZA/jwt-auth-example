@@ -1,17 +1,23 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
+import React from 'react';
+import { useUsersQuery } from '../generated/graphql';
 
 interface HomeProps {
 
 }
 
 export const Home: React.FC<HomeProps> = ({}) => {
-    return <div>
-      <div>
-        <Link to="/register">Register</Link>
-      </div>
-      <div>
-        <Link to="/login">Login</Link>
-      </div>
-    </div>
+  const {data} = useUsersQuery({fetchPolicy: 'network-only'});
+
+  if (!data) {
+    return <div>loading...</div>;
+  }
+
+  return <div>
+    <div>Users:</div>
+    <ul>
+      {data.users.map(x => {
+        return <li key={x.id}>{x.email}, {x.id}</li>
+      })}
+    </ul>
+  </div>
 }

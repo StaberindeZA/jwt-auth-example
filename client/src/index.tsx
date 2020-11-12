@@ -1,18 +1,80 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import { ApolloClient, InMemoryCache, ApolloProvider } from '@apollo/client';
-// import { ApolloProvider } from '@apollo/react-hooks';
-import { Routes } from './Routes';
+import { ApolloClient, InMemoryCache, ApolloProvider, createHttpLink } from '@apollo/client';
 import reportWebVitals from './reportWebVitals';
+import { getAccessToken, setAccessToken } from './accessToken';
+import { setContext } from '@apollo/client/link/context';
+import { App } from './App';
+import { TokenRefreshLink } from "apollo-link-token-refresh";
+import jwt_decode from 'jwt-decode';
+
+interface MyToken {
+  exp: number;
+}
+
+function isMyToken(toCheck: unknown): toCheck is MyToken {
+  return toCheck instanceof Object && 'exp' in toCheck;
+}
+
+const refreshLink = new TokenRefreshLink({
+  accessTokenField: 'accessToken',
+  isTokenValidOrUndefined: () => {
+    const token = getAccessToken();
+
+    if (!token) {
+      return true;
+    }
+    
+    try {
+      const decoded: unknown = jwt_decode(token);
+      let exp: number = 0;
+      if (isMyToken(decoded)) {
+        exp = decoded.exp;
+    }
+      if (Date.now() >= exp * 1000) {
+        return false;
+      } else {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  },
+  fetchAccessToken: () => {
+    return fetch('http://localhost:4000/refresh_token', { method: 'POST', credentials: 'include' });
+  },
+  handleFetch: (accessToken: string) => {
+     setAccessToken(accessToken);
+  },
+  handleError: (err: Error) => {
+    console.warn('Your refresh token is invalid. Try to relogin.');
+    console.error(err);
+  },
+});
+
+const httpLink = createHttpLink({
+  uri: 'http://localhost:4000/graphql',
+  credentials: 'include',
+});
+
+const authLink = setContext((_, { headers } ) => {
+  const token = getAccessToken();
+  return {
+    headers: {
+      ...headers,
+      authorization: token ? `bearer ${token}` : '',
+    }
+  }
+});
 
 const client = new ApolloClient({
-  uri: 'http://localhost:4000/graphql',
-  cache: new InMemoryCache()
+  link: refreshLink.concat(authLink).concat(httpLink),
+  cache: new InMemoryCache(),
 })
 
 ReactDOM.render(
   <ApolloProvider client={client}>
-    <Routes />
+    <App />
   </ApolloProvider>,
   document.getElementById('root')
 );
